@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream };
+use std::thread;
 
 fn main() {
     println!("Hello, I'm Server!");
@@ -33,30 +34,23 @@ fn handle_client(mut socket: TcpStream, addr: SocketAddr, client_id: usize) {
     // before using. Also, IO operations are more expensive than CPU operations, so reading
     // as much as possible from a stream helps.
 
+    thread::spawn(move || {
 
-    // thread::spawn(move || {
-        // println!("new client: {addr:?}");
-        // let _ = socket.write(b"Thanks for coming!");
+        let mut bufwriter = BufWriter::new(&socket);
+        let mut bufreader = BufReader::new(&socket);
 
-    let mut bufwriter = BufWriter::new(&socket);
-    let mut bufreader = BufReader::new(&socket);
-
-    for line in bufreader.lines() {
-        match line {
-            Ok(l) =>
-                {
-                    println!("Client {client_id:?}-> {l:?}");
-                    if l.eq("Ping!") {
-                        bufwriter.write(b"Pong!\n");
-                        bufwriter.flush();
-                    }
-                },
-            Err(_) => {}
-        };
-    }
-
-    // bufreader.read_line(&mut res).unwrap();
-    // println!("{client_id:?}-> {res:?}");
-
-    // });
+        for line in bufreader.lines() {
+            match line {
+                Ok(l) =>
+                    {
+                        println!("Client {client_id:?}-> {l:?}");
+                        if l.eq("Ping!") {
+                            bufwriter.write(b"Pong!\n");
+                            bufwriter.flush();
+                        }
+                    },
+                Err(_) => {}
+            };
+        }
+    });
 }
