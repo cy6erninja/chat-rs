@@ -1,4 +1,4 @@
-use std::io::{ BufRead, BufReader };
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream };
 
 fn main() {
@@ -38,11 +38,17 @@ fn handle_client(mut socket: TcpStream, addr: SocketAddr, client_id: usize) {
         // println!("new client: {addr:?}");
         // let _ = socket.write(b"Thanks for coming!");
 
-    let mut bufreader = BufReader::new(socket);
+    let mut bufwriter = BufWriter::new(&socket);
+    let mut bufreader = BufReader::new(&socket);
 
     for line in bufreader.lines() {
         match line {
-            Ok(l) => println!("Client {client_id:?}-> {l:?}"),
+            Ok(l) =>
+                {
+                    println!("Client {client_id:?}-> {l:?}");
+                    bufwriter.write(b"Pong!\n");
+                    bufwriter.flush();
+                },
             Err(_) => {}
         };
     }
