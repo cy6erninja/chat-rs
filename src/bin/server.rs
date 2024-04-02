@@ -46,8 +46,10 @@ fn handle_client(mut socket: TcpStream, addr: SocketAddr, client_id: usize) {
             Ok(l) =>
                 {
                     println!("Client {client_id:?}-> {l:?}");
-                    bufwriter.write(b"Pong!\n");
-                    bufwriter.flush();
+                    if l.eq("Ping!") {
+                        bufwriter.write(b"Pong!\n");
+                        bufwriter.flush();
+                    }
                 },
             Err(_) => {}
         };
