@@ -2,4 +2,4 @@
 
 ## STAGE 1: One room terminal text chat (unencrypted)
 
-
+![Chat](chat.png)
