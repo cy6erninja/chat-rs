@@ -28,12 +28,7 @@ fn main() {
             let message = receiver.recv().unwrap();
             let mut writers = broadcast_writers.lock().unwrap();
 
-            for (socket_addr, mut writer) in &mut *writers {
-                // if *socket_addr == message.from {
-                //
-                //     continue;
-                // }
-
+            for (_, mut writer) in &mut *writers {
                 writer.write(message.message.as_bytes()).unwrap();
                 writer.write(b"\n").unwrap();
                 writer.flush().unwrap();

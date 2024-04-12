@@ -1,9 +1,6 @@
 use std::io::{BufRead, BufReader, BufWriter, Stdout, Write};
 use std::net::TcpStream;
 use std::thread;
-use std::thread::sleep;
-use std::time::Duration;
-
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -75,9 +72,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-
-
-
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
@@ -216,36 +210,6 @@ fn ui<B: Backend>(f: &mut Frame, app: &App) {
     f.render_widget(messages, chunks[2]);
 }
 
-fn tmp() {
-    let mut server_socket = TcpStream::connect("127.0.0.1:8000").unwrap();
-    // let mut bufwriter = BufWriter::new(server_socket.try_clone().unwrap());
-    // let mut bufreader = BufReader::new(server_socket);
-    //
-    // println!("{}", "Hello, I'm client");
-    //
-    // bufwriter.write(b"Hello, I'm your new client!\n").unwrap();
-    // bufwriter.flush();
-    //
-    // thread::spawn(move || {
-    //     loop {
-    //         bufwriter.write(b"Ping!\n").unwrap();
-    //         bufwriter.flush();
-    //
-    //         sleep(Duration::new(2, 0));
-    //     }
-    // });
-    //
-    // loop {
-    //     let mut line = String::new();
-    //
-    //     if bufreader.read_line(&mut line).unwrap() > 0 {
-    //         let l = line.chars().filter(|c| *c != '\n').collect::<String>();
-    //         println!("{l:?}");
-    //         line.clear();
-    //     }
-    // }
-}
-
 fn connect_to_server(addr: &str) -> (BufReader<TcpStream>, BufWriter<TcpStream>) {
     let mut server_socket = TcpStream::connect("127.0.0.1:8000").unwrap();
     let mut bufwriter = BufWriter::new(server_socket.try_clone().unwrap());
@@ -253,4 +217,3 @@ fn connect_to_server(addr: &str) -> (BufReader<TcpStream>, BufWriter<TcpStream>)
 
     (bufreader, bufwriter)
 }
-
