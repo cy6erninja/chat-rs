@@ -3,10 +3,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::fd::{AsFd, AsRawFd};
 use std::ptr::null_mut;
-use std::sync::{Arc, Condvar, mpsc, Mutex};
-use std::sync::mpsc::{Receiver, RecvError, Sender};
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use libc::{kqueue, socket};
+use libc::{kqueue};
 
 type SocketRawFileDescriptor = usize;
 
@@ -22,7 +22,7 @@ enum BroadcastRequest {
 }
 
 enum BroadcastResponse {
-    Acknowledged(SocketRawFileDescriptor)
+    MessageAcknowledged(SocketRawFileDescriptor)
 }
 
 fn main() {
@@ -64,12 +64,8 @@ fn spawn_kqueue_thread(
             };
 
             if n == -1 {
-                panic!("Error occurred: {}", std::io::Error::last_os_error());
+                panic!("Can't fetch events from kqueue: {}", std::io::Error::last_os_error());
             }
-
-            // TODO: handle errors.
-
-            println!("Listening: {:?}", n);
 
             // Vector length is not updated automatically in unsafe mode, so we do it manually.
             unsafe {
@@ -80,32 +76,33 @@ fn spawn_kqueue_thread(
                 match event {
                     Some(k) => {
                         if k.flags as i16 & libc::EVFILT_READ != 0 {
-                            println!("READ");
                             sender.send(BroadcastRequest::BroadcastMessage(k.ident)).unwrap();
                         }
 
                         if k.flags & libc::EV_EOF != 0 {
-                            println!("EOF");
                             sender.send(BroadcastRequest::RemoveSocket(k.ident)).unwrap()
                         }
 
                         match ack_receiver.recv() {
                             Ok(res) => {
                                 match res {
-                                    BroadcastResponse::Acknowledged(fd) => {
+                                    BroadcastResponse::MessageAcknowledged(fd) => {
                                         if fd != k.ident {
-                                            panic!("Wrong file descriptor acknowledgement received!");
+                                            println!("Wrong file descriptor acknowledgement received!");
+
+                                            continue;
                                         }
                                     }
                                 }
                             }
-                            Err(e) => {panic!("{}", e)}
+                            Err(e) => {
+                                println!("Could not acknowledge message because of error: {}", e);
+
+                                continue;
+                            }
                         }
                     },
-                    None => {
-                        println!("None!");
-                        break;
-                    }
+                    None => {}
                 }
             }
         }
@@ -122,24 +119,49 @@ fn spawn_broadcast_thread(kq_fd: usize, receiver: Receiver<BroadcastRequest>, ac
                 BroadcastRequest::AddSocket(socket) => {
                     add_socket_listener(kq_fd, &socket);
                     clients.insert(socket.as_raw_fd() as usize, socket);
+                    println!("Client connected...");
                 }
                 BroadcastRequest::RemoveSocket(fd) => {
                     // Removing dead socket.
                     clients.remove(&(fd as usize));
+                    println!("Client disconnected...");
                 }
                 BroadcastRequest::BroadcastMessage(fd) => {
-                    let message_sender = clients.get(&fd).unwrap();
-                    let mut buf = BufReader::new(message_sender);
+                    let mut message_sender = match clients.get(&fd) {
+                        Some(socket) => { BufReader::new(socket) }
+                        None => {
+                            println!("Socket with file descriptor {} is not found...", &fd);
 
-                    // let Some(line) = buf.lines().next();
-                    let mut tmp = String::new();
+                            continue;
+                        }
+                    };
 
-                    buf.read_line(&mut tmp);
-                    for (client_fd, mut socket) in &clients {
-                        socket.write(tmp.as_bytes()).unwrap();
+                    let mut message = String::new();
+                    match message_sender.read_line(&mut message) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Could not read a message from socket {}", e);
+
+                            continue;
+                        }
+                    };
+                    for (_, mut socket) in &clients {
+                        match socket.write(message.as_bytes()) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("Could not broadcast a message {}", e);
+
+                                continue;
+                            }
+                        }
                     }
 
-                    ack_sender.send(BroadcastResponse::Acknowledged(fd)).unwrap()
+                    match ack_sender.send(BroadcastResponse::MessageAcknowledged(fd)) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("Could not send message acknowledgement {}", e);
+                        }
+                    };
                 }
             }
         };
@@ -147,7 +169,23 @@ fn spawn_broadcast_thread(kq_fd: usize, receiver: Receiver<BroadcastRequest>, ac
 }
 
 fn accept_clients(sender: Sender<BroadcastRequest>) {
-    let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+    let server_addr = std::env::args().nth(1);
+
+    let server_addr = match server_addr {
+        Some(addr) => addr,
+        None => {
+            panic!("Please, provide server address and port in the first arg e.g. 127.0.0.1:8000");
+        }
+    };
+
+    let listener = match TcpListener::bind(server_addr) {
+        Ok(l) => l,
+        Err(e) => {
+            println!("Could not start a server: {}", e);
+
+            return;
+        }
+    };
 
     // Accept new clients.
     loop {
@@ -155,7 +193,7 @@ fn accept_clients(sender: Sender<BroadcastRequest>) {
             Ok((socket, addr)) => {
                 sender.send(BroadcastRequest::AddSocket(socket)).unwrap();
             },
-            Err(e) => panic!("{}", e),
+            Err(e) => println!("Some client could not connect: {}", e.to_string()),
         };
     }
 }
@@ -195,11 +233,14 @@ fn add_socket_listener(kq_fd: usize, socket: &TcpStream) {
         );
 
         if n == -1 {
-            panic!("Error occurred: {}", std::io::Error::last_os_error());
+            println!(
+                "Error occurred when registering socket in kqueue: {}",
+                std::io::Error::last_os_error()
+            );
+
+            return;
         }
 
-        // TODO: handle errors.
-
-        println!("New socket has been registered...");
+        println!("New socket listener has been added to kqueue. Socket fd: {}", ke.ident as usize);
     }
 }
