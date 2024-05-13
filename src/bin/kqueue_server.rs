@@ -6,7 +6,37 @@ use std::ptr::null_mut;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use libc::{kqueue};
+use libc::{kevent, kqueue};
+use futures::executor::ThreadPool;
+
+#[macro_export]
+macro_rules! kevents {
+    ( $kq:expr, $eq:expr ) => {
+        {
+           let e = unsafe {
+                libc::kevent(
+                    $kq as libc::c_int,
+                    null_mut(),
+                    0,
+                    $eq.as_mut_ptr(),
+                    256,
+                    null_mut()
+                )
+            };
+
+            if e == -1 {
+                panic!("Can't fetch events from kqueue: {}", std::io::Error::last_os_error());
+            }
+
+            unsafe {
+                 event_queue.set_len(n as usize);
+            }
+
+            e
+        }
+
+    }
+}
 
 type SocketRawFileDescriptor = usize;
 
@@ -51,26 +81,28 @@ fn spawn_kqueue_thread(
     thread::spawn(move || {
         let mut event_queue = Vec::<libc::kevent>::with_capacity(256);
 
-        loop {
-            let n = unsafe {
-                libc::kevent(
-                    kq_fd as libc::c_int,
-                    null_mut(),
-                    0,
-                    event_queue.as_mut_ptr(),
-                    256,
-                    null_mut()
-                )
-            };
 
-            if n == -1 {
-                panic!("Can't fetch events from kqueue: {}", std::io::Error::last_os_error());
-            }
+        loop {
+            let n = kevents!(kq_fd as libc::c_int, event_queue);
+            // let n = unsafe {
+            //     libc::kevent(
+            //         kq_fd as libc::c_int,
+            //         null_mut(),
+            //         0,
+            //         event_queue.as_mut_ptr(),
+            //         256,
+            //         null_mut()
+            //     )
+            // };
+
+            // if n == -1 {
+            //     panic!("Can't fetch events from kqueue: {}", std::io::Error::last_os_error());
+            // }
 
             // Vector length is not updated automatically in unsafe mode, so we do it manually.
-            unsafe {
-                event_queue.set_len(n as usize);
-            }
+            // unsafe {
+            //     event_queue.set_len(n as usize);
+            // }
 
             while let event = event_queue.pop() {
                 match event {
