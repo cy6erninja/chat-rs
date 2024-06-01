@@ -1,6 +1,7 @@
 use std::io::{BufRead, BufReader, BufWriter, Stdout, Write};
 use std::net::TcpStream;
 use std::thread;
+use bincode::{self, DefaultOptions, Serializer};
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
@@ -19,8 +20,27 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
     Frame, Terminal,
 };
+use serde::{Deserialize, Serialize};
 use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct UserId(String);
+#[derive(Serialize, Deserialize, Debug)]
+struct GroupId(String);
+#[derive(Serialize, Deserialize, Debug)]
+enum Recepient {
+    User(UserId),
+    Group(GroupId)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    from: UserId,
+    to: Recepient,
+    text: Option<String>,
+    media: Option<Vec<u8>>
+}
 
 enum InputMode {
     Normal,
@@ -109,8 +129,19 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                 InputMode::Editing => match key.code {
                     KeyCode::Enter => {
                         // app.messages.push(app.input.value().into());
-                        writer.write(app.input.value().as_bytes()).unwrap();
-                        writer.write(b"\n").unwrap();
+
+                        let message = Message {
+                            from: UserId(String::from("Client")),
+                            to: Recepient::User(UserId(String::from("Server"))),
+                            text: Some(app.input.value().to_string()),
+                            media: None,
+                        };
+
+                        let ser_message = bincode::serialize(&message).unwrap();
+                        let len = ser_message.len() as u32;
+                        writer.write(&len.to_be_bytes())?;
+                        message.serialize(&mut Serializer::new(&mut writer, DefaultOptions::new())).unwrap();
+                        // writer.write(b"\n").unwrap();
                         writer.flush().unwrap();
                         app.input.reset();
                     }

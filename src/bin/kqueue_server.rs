@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::fd::{AsFd, AsRawFd};
 use std::ptr::null_mut;
@@ -7,7 +7,6 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use libc::{kevent, kqueue};
-use futures::executor::ThreadPool;
 
 #[macro_export]
 macro_rules! kevents {
@@ -29,7 +28,7 @@ macro_rules! kevents {
             }
 
             unsafe {
-                 event_queue.set_len(n as usize);
+                 $eq.set_len(e as usize);
             }
 
             e
@@ -42,6 +41,7 @@ type SocketRawFileDescriptor = usize;
 
 struct Message {
     pub from: SocketRawFileDescriptor,
+    pub to: Option<SocketRawFileDescriptor>,
     pub message: String,
 }
 
@@ -80,7 +80,6 @@ fn spawn_kqueue_thread(
 ) {
     thread::spawn(move || {
         let mut event_queue = Vec::<libc::kevent>::with_capacity(256);
-
 
         loop {
             let n = kevents!(kq_fd as libc::c_int, event_queue);
@@ -168,17 +167,23 @@ fn spawn_broadcast_thread(kq_fd: usize, receiver: Receiver<BroadcastRequest>, ac
                         }
                     };
 
-                    let mut message = String::new();
-                    match message_sender.read_line(&mut message) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            println!("Could not read a message from socket {}", e);
 
-                            continue;
-                        }
-                    };
+                    let mut len_buf = [0u8; 4];
+                    message_sender.read_exact(&mut len_buf).unwrap();
+
+                    let mut message = vec![0u8; u32::from_be_bytes(len_buf) as usize];
+                    message_sender.read_exact(&mut message).unwrap();
+                    println!("{:?}", &message);
+
+                        // Ok(_) => {}
+                        // Err(e) => {
+                        //     println!("Could not read a message from socket {}", e);
+                        //
+                        //     continue;
+                        // }
+                    // };
                     for (_, mut socket) in &clients {
-                        match socket.write(message.as_bytes()) {
+                        match socket.write(&message) {
                             Ok(_) => {}
                             Err(e) => {
                                 println!("Could not broadcast a message {}", e);

@@ -21,6 +21,7 @@ fn main() {
 
     let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
     let stream_writers: HashMap<SocketAddr, BufWriter<TcpStream>> = HashMap::new();
+    // Start using the same interprocess communication technique(names channels)
     let arc_writers = Arc::new(Mutex::new(stream_writers));
     let broadcast_writers = Arc::clone(&arc_writers);
 
