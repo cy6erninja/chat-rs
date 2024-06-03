@@ -111,7 +111,7 @@ fn main() {
     }
 
     async fn connection_writer_loop(
-        messages: &mut Receiver<String>,
+        messages: &mut Receiver<Vec<u8>>,
         stream: Arc<TcpStream>,
         shutdown: Receiver<Void>,
     ) -> Result<()> {
@@ -122,8 +122,8 @@ fn main() {
             select! {
             msg = messages.next().fuse() => match msg {
                 Some(msg) =>  {
-                        println!("{}", msg);
-                        stream.write_all(msg.as_bytes()).await?
+                        println!("{:?}", &msg);
+                        stream.write_all(&msg).await?
                 },
                 None => break,
             },
@@ -152,8 +152,8 @@ fn main() {
 
     async fn broker_loop(events: Receiver<Event>) {
         let (disconnect_sender, mut disconnect_receiver) = // 1
-            mpsc::unbounded::<(String, Receiver<String>)>();
-        let mut peers: HashMap<String, Sender<String>> = HashMap::new();
+            mpsc::unbounded::<(String, Receiver<Vec<u8>>)>();
+        let mut peers: HashMap<String, Sender<Vec<u8>>> = HashMap::new();
         let mut events = events.fuse();
         loop {
             let event = select! {
@@ -171,8 +171,13 @@ fn main() {
                 Event::Message { from, to, msg } => {
                     for addr in to {
                         if let Some(peer) = peers.get_mut(&addr) {
-                            let msg = format!("from {}: {}\n", from, msg);
-                            peer.send(msg).await
+                            let msg = Message {
+                                from: UserId(from.clone()),
+                                to: Recipient::User(UserId(addr)),
+                                text: Some(format!("from {}: {}\n", from, msg)),
+                                media: None,
+                            };
+                            peer.send(bincode::serialize(&msg).unwrap()).await
                                 .unwrap() // 6
                         }
                     }
