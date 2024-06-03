@@ -1,33 +1,56 @@
 
 #![allow(unused)]
+
+use serde::{Deserialize, Serialize};
+extern crate async_std;
+extern crate futures;
+use async_std::{
+    io::BufReader,
+    net::{TcpListener, TcpStream, ToSocketAddrs},
+    prelude::*,
+    task,
+};
+use futures::channel::mpsc;
+use futures::sink::SinkExt;
+use futures::{select, FutureExt};
+use std::{
+    collections::hash_map::{Entry, HashMap},
+    future::Future,
+    sync::Arc,
+};
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Sender<T> = mpsc::UnboundedSender<T>;
+type Receiver<T> = mpsc::UnboundedReceiver<T>;
+
+#[derive(Debug)]
+enum Void {}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct UserId(String);
+#[derive(Serialize, Deserialize, Debug)]
+struct GroupId(String);
+#[derive(Serialize, Deserialize, Debug)]
+enum Recipient {
+    User(UserId),
+    Group(GroupId)
+}
+#[derive(Serialize, Deserialize, Debug)]
+struct Message {
+    from: UserId,
+    to: Recipient,
+    text: Option<String>,
+    media: Option<Vec<u8>>
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Mess {
+    message: String
+}
 fn main() {
-    extern crate async_std;
-    extern crate futures;
-    use async_std::{
-        io::BufReader,
-        net::{TcpListener, TcpStream, ToSocketAddrs},
-        prelude::*,
-        task,
-    };
-    use futures::channel::mpsc;
-    use futures::sink::SinkExt;
-    use futures::{select, FutureExt};
-    use std::{
-        collections::hash_map::{Entry, HashMap},
-        future::Future,
-        sync::Arc,
-    };
-
-    type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
-    type Sender<T> = mpsc::UnboundedSender<T>;
-    type Receiver<T> = mpsc::UnboundedReceiver<T>;
-
-    #[derive(Debug)]
-    enum Void {}
-
     // main
     fn run() -> Result<()> {
-        task::block_on(accept_loop("127.0.0.1:8080"))
+        task::block_on(accept_loop("127.0.0.1:8000"))
     }
 
     async fn accept_loop(addr: impl ToSocketAddrs) -> Result<()> {
@@ -35,13 +58,17 @@ fn main() {
         let (broker_sender, broker_receiver) = mpsc::unbounded();
         let broker_handle = task::spawn(broker_loop(broker_receiver));
         let mut incoming = listener.incoming();
+        println!("Waiting for connections...");
+
         while let Some(stream) = incoming.next().await {
             let stream = stream?;
             println!("Accepting from: {}", stream.peer_addr()?);
             spawn_and_log_error(connection_loop(broker_sender.clone(), stream));
         }
+
         drop(broker_sender);
         broker_handle.await;
+
         Ok(())
     }
 
@@ -54,6 +81,7 @@ fn main() {
             None => Err("peer disconnected immediately")?,
             Some(line) => line?,
         };
+        let addr = stream.peer_addr()?;
         let (_shutdown_sender, shutdown_receiver) = mpsc::unbounded::<Void>();
         broker.send(Event::NewPeer {
             name: name.clone(),
@@ -77,6 +105,8 @@ fn main() {
             }).await.unwrap();
         }
 
+        println!("Client {} disconnected...", addr);
+
         Ok(())
     }
 
@@ -91,7 +121,10 @@ fn main() {
         loop {
             select! {
             msg = messages.next().fuse() => match msg {
-                Some(msg) => stream.write_all(msg.as_bytes()).await?,
+                Some(msg) =>  {
+                        println!("{}", msg);
+                        stream.write_all(msg.as_bytes()).await?
+                },
                 None => break,
             },
             void = shutdown.next().fuse() => match void {
@@ -178,4 +211,6 @@ fn main() {
             }
         })
     }
+
+    run();
 }

@@ -4,17 +4,6 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::net::{ SocketAddr, TcpListener, TcpStream };
 use std::sync::{Arc, mpsc, Mutex};
 use std::thread;
-use chat_rs::user::User;
-
-struct Group {
-    name: String,
-    users: Vec<User>
-}
-
-struct Message {
-    pub from: SocketAddr,
-    pub message: String,
-}
 
 fn main() {
     println!("Hello, I'm Server!");
